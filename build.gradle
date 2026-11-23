@@ -1,0 +1,194 @@
+plugins {
+    id 'java-library'
+    id 'idea'
+    id 'net.neoforged.moddev' version "${moddev_version}" apply false
+    id 'net.neoforged.moddev.legacyforge' version "${moddev_version}" apply false
+    id 'dev.kikugie.loom-back-compat' version '0.4.2' apply false
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = "${mod_id}-${project.name}"
+}
+
+def mcVersion = stonecutter.current.version
+
+if (loader == 'fabric') {
+    apply from: "${rootProject.projectDir}/build.fabric.gradle"
+    return
+}
+
+def isLegacy = loader == 'forge'
+apply plugin: isLegacy ? 'net.neoforged.moddev.legacyforge' : 'net.neoforged.moddev'
+def modding = isLegacy ? legacyForge : neoForge
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(java_version as int)
+
+stonecutter.constants.match(loader, 'forge', 'neoforge', 'fabric')
+
+stonecutter.replacements.string(stonecutter.eval(mcVersion, '>=26.1')) {
+    replace('ResourceLocation', 'Identifier')
+    replace('GuiGraphics', 'GuiGraphicsExtractor')
+}
+
+def runDir = rootProject.file(run_dir)
+
+if (isLegacy) {
+    legacyForge.version = forge_version
+} else {
+    neoForge.version = project.neo_version
+}
+
+modding.with {
+    if (parchment_minecraft_version) {
+        parchment {
+            mappingsVersion = project.parchment_mappings_version
+            minecraftVersion = project.parchment_minecraft_version
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet sourceSets.main
+        }
+    }
+
+    if (!isLegacy) {
+        unitTest {
+            enable()
+            testedMod = mods."${mod_id}"
+        }
+    } else {
+        addModdingDependenciesTo(sourceSets.test)
+    }
+
+    runs {
+        client {
+            client()
+        }
+        server {
+            server()
+            programArgument '--nogui'
+        }
+        configureEach {
+            gameDirectory = runDir
+        }
+    }
+}
+
+configurations {
+    localRuntime
+    runtimeClasspath.extendsFrom localRuntime
+}
+
+repositories {
+    mavenLocal { content { includeGroup 'com.wf.gemrender' } }
+    maven {
+        name = 'Warfactory Snapshots'
+        url = 'https://repo.warfactory.co/snapshots'
+        content { includeGroup 'com.wf.gemrender' }
+    }
+    maven { name = 'NeoForged'; url = 'https://maven.neoforged.net/releases' }
+    maven {
+        name = 'createmod maven'
+        url = 'https://maven.createmod.net'
+        content { includeGroupAndSubgroups 'dev.engine-room' }
+    }
+    maven { name = 'ParchmentMC'; url = 'https://maven.parchmentmc.org' }
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly "com.wf.gemrender:${gemrender_artifact}:[${gemrender_version}-SNAPSHOT,1)"
+    localRuntime "com.wf.gemrender:${gemrender_artifact}:[${gemrender_version}-SNAPSHOT,1)"
+    def flywheelDep = "dev.engine-room.flywheel:${flywheel_artifact}:${flywheel_version}"
+    compileOnly flywheelDep
+    localRuntime flywheelDep
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testImplementation 'org.assertj:assertj-core:3.26.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+def loaderPackages = ['forge', 'neoforge', 'fabric']
+loaderPackages.findAll { it != loader }.each { sourceSets.main.java.exclude "com/wf/wfchat/platform/${it}/**" }
+
+def mixinConfigs = ['wfchat.mixins.json']
+
+tasks.named('processResources', ProcessResources) {
+    filesMatching('*.mixins.json') {
+        filter { String line -> line.replace('"JAVA_21"', "\"JAVA_${java_version}\"") }
+    }
+}
+
+if (isLegacy) {
+    dependencies {
+        annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    }
+    def refmap = 'wfchat.refmap.json'
+    mixin {
+        add sourceSets.main, refmap
+        mixinConfigs.each { config it }
+    }
+    tasks.named('processResources', ProcessResources) {
+        filesMatching('*.mixins.json') {
+            filter { String line -> line.trim().startsWith('"package"') ? "${line}\n  \"refmap\": \"${refmap}\"," : line }
+        }
+    }
+    tasks.named('jar', Jar) {
+        manifest.attributes(['MixinConfigs': mixinConfigs.join(',')])
+    }
+}
+
+def generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+    def tokens = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            loader_version_range   : loader_version_range,
+            platform_version_range : platform_version_range,
+            gemrender_version_range: gemrender_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description,
+    ]
+    inputs.properties tokens
+    expand tokens
+    from rootProject.file("src/main/templates/${loader}")
+    into 'build/generated/sources/modMetadata'
+}
+sourceSets.main.resources.srcDir generateModMetadata
+modding.ideSyncTask generateModMetadata
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+tasks.named('runClient') {
+    doFirst {
+        runDir.mkdirs()
+        def options = new File(runDir, 'options.txt')
+        if (!options.exists()) {
+            options.text = "onboardAccessibility:false\noverrideWidth:1280\noverrideHeight:720\n"
+        }
+    }
+}
+
+apply plugin: 'maven-publish'
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            from components.java
+            artifactId = "wfchat-${project.name}"
+            version = "${project.version}-SNAPSHOT"
+        }
+    }
+}

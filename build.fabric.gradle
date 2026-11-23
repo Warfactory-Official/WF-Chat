@@ -1,0 +1,135 @@
+apply plugin: 'dev.kikugie.loom-back-compat'
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = "${mod_id}-${project.name}"
+}
+
+def mcVersion = stonecutter.current.version
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(java_version as int)
+
+stonecutter.constants.match(loader, 'forge', 'neoforge', 'fabric')
+
+stonecutter.replacements.string(stonecutter.eval(mcVersion, '>=26.1')) {
+    replace('ResourceLocation', 'Identifier')
+    replace('GuiGraphics', 'GuiGraphicsExtractor')
+}
+
+def lwjglPin = [
+        '1.20.1': '3.3.1',
+        '1.21.1': '3.3.3',
+        '26.1.2': '3.4.1',
+][minecraft_version]
+
+configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+        if (details.requested.group == 'org.lwjgl' && details.requested.name != 'lwjgl-ktx') {
+            details.useVersion lwjglPin
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal { content { includeGroup 'com.wf.gemrender' } }
+    maven {
+        name = 'Warfactory Snapshots'
+        url = 'https://repo.warfactory.co/snapshots'
+        content { includeGroup 'com.wf.gemrender' }
+    }
+    maven { name = 'Fabric'; url = 'https://maven.fabricmc.net/' }
+    maven {
+        name = 'CreateMod'
+        url = 'https://maven.createmod.net'
+        content { includeGroup 'dev.engine-room.flywheel' }
+    }
+}
+
+def obfuscated = !stonecutter.eval(mcVersion, '>=26.1')
+def modCfg = { String notation -> dependencies.add(obfuscated ? 'modImplementation' : 'implementation', notation) }
+def modCompileCfg = { String notation -> dependencies.add(obfuscated ? 'modCompileOnly' : 'compileOnly', notation) }
+def devRuntime = { String notation -> dependencies.add(obfuscated ? 'modLocalRuntime' : 'localRuntime', notation) }
+
+dependencies {
+    add('minecraft', "com.mojang:minecraft:${minecraft_version}")
+    if (obfuscated) add('mappings', loom.officialMojangMappings())
+
+    modCfg("net.fabricmc:fabric-loader:${fabric_loader_version}")
+    modCfg("net.fabricmc.fabric-api:fabric-api:${fabric_api_version}")
+
+    def gemDep = "com.wf.gemrender:${gemrender_artifact}:[${gemrender_version}-SNAPSHOT,1)"
+    modCompileCfg(gemDep)
+    devRuntime(gemDep)
+    def flywheelDep = "dev.engine-room.flywheel:${flywheel_artifact}:${flywheel_version}"
+    modCompileCfg(flywheelDep)
+    devRuntime(flywheelDep)
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testImplementation 'org.assertj:assertj-core:3.26.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+['forge', 'neoforge'].each { sourceSets.main.java.exclude "com/wf/wfchat/platform/${it}/**" }
+
+def mixinConfigs = ['wfchat.mixins.json']
+
+def fabricMetadata = tasks.register('generateFabricModMetadata', ProcessResources) {
+    from rootProject.file('src/main/templates/fabric')
+    into layout.buildDirectory.dir('generated/fabric')
+}
+sourceSets.main.resources.srcDir fabricMetadata
+
+fabricMetadata.configure {
+    def tokens = [
+            'mod_id'                 : mod_id,
+            'mod_name'               : mod_name,
+            'mod_version'            : mod_version,
+            'mod_license'            : mod_license,
+            'mod_description'        : mod_description,
+            'minecraft_version_range': minecraft_version_range,
+            'java_version'           : java_version,
+            'gemrender_version_range': gemrender_version_range,
+            'mixin_configs'          : mixinConfigs.collect { "\"${it}\"" }.join(', '),
+    ]
+    inputs.property 'metadataTokens', tokens.collectEntries { key, value -> [key, value.toString()] }
+    filesMatching('fabric.mod.json') {
+        expand(tokens)
+    }
+}
+
+tasks.named('processResources', ProcessResources) {
+    filesMatching('*.mixins.json') {
+        filter { String line -> line.replace('"JAVA_21"', "\"JAVA_${java_version}\"") }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = java_version as int
+}
+
+test {
+    useJUnitPlatform()
+}
+
+loom {
+    runs {
+        client {
+            runDir "../../${run_dir}"
+        }
+    }
+}
+
+apply plugin: 'maven-publish'
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            from components.java
+            artifactId = "wfchat-${project.name}"
+            version = "${project.version}-SNAPSHOT"
+        }
+    }
+}

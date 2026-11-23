@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "${mod_id}",
+  "version": "${mod_version}",
+  "name": "${mod_name}",
+  "description": "${mod_description}",
+  "license": "${mod_license}",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.wf.wfchat.platform.fabric.WfChatFabric"],
+    "client": ["com.wf.wfchat.platform.fabric.WfChatFabricClient"]
+  },
+  "mixins": [
+    ${mixin_configs}
+  ],
+  "depends": {
+    "fabricloader": ">=0.16",
+    "minecraft": "${minecraft_version_range}",
+    "java": ">=${java_version}",
+    "fabric-api": "*"
+  },
+  "recommends": {
+    "gemrender": "${gemrender_version_range}"
+  }
+}
