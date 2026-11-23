@@ -36,6 +36,7 @@ public final class ClientChat {
     public final ChatView view = new ChatView(this);
     public final ServerInfo server = () -> serverHasMod();
     private final Vanity vanity = new Vanity();
+    private final Bridges bridges = new Bridges();
     private final java.util.Set<Long> revealed = new java.util.HashSet<>();
     private ChatConfig config = new ChatConfig();
     private final Router router = new Router(Registry.get(), channels, Nearby::test);
@@ -58,6 +59,7 @@ public final class ClientChat {
         Registry.get().channelCommand(new MsgChannelCommand());
         config = ChatConfig.load();
         vanity.init();
+        bridges.init();
         Emojis.get().start();
         channels.sync(Registry.get());
     }

@@ -9,6 +9,7 @@
   "client": [
     "ChatComponentMixin",
     "ChatScreenMixin",
-    "ChatListenerMixin"
+    "ChatListenerMixin",
+    "EditBoxMixin"
   ]
 }

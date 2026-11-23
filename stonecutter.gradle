@@ -2,6 +2,7 @@ plugins {
     id "dev.kikugie.stonecutter"
     id "net.fabricmc.fabric-loom-remap" version "1.16.3" apply false
     id "net.fabricmc.fabric-loom" version "1.16.3" apply false
+    id "me.modmuss50.mod-publish-plugin" version "2.2.1" apply false
 }
 
 stonecutter.active "1.21.1"
@@ -18,9 +19,24 @@ tasks.register('server') {
     dependsOn ":${activeVersion()}:runServer"
 }
 
-['build', 'check', 'test', 'jar'].each { name ->
+def buildableVersions = stonecutter.versions.findAll { v ->
+    def f = file("versions/${v.project}/gradle.properties")
+    if (!f.isFile()) return true
+    def props = new Properties()
+    f.withInputStream { props.load(it) }
+    Boolean.parseBoolean(props.getProperty('version_buildable', 'true'))
+}
+
+['build', 'check', 'test', 'jar', 'publish'].each { name ->
     tasks.register("${name}All") {
         group = 'wfchat'
-        dependsOn stonecutter.versions.collect { ":${it.project}:${name}" }
+        dependsOn buildableVersions.collect { ":${it.project}:${name}" }
     }
 }
+
+tasks.register('publishAllMods') {
+    group = 'wfchat'
+    dependsOn buildableVersions.collect { ":${it.project}:publishMods" }
+}
+
+stonecutter.tasks.order 'build'

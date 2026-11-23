@@ -55,6 +55,9 @@ public final class ChatHud {
         chat.sync();
         boolean hidden = o.chatVisibility().get() == ChatVisiblity.HIDDEN;
         Canvas canvas = Canvas.shared();
+        if (!focused) {
+            ToolButtons.close();
+        }
         if (hidden && !focused) {
             return;
         }
@@ -64,6 +67,7 @@ public final class ChatHud {
         }
         if (focused) {
             BUTTONS.render(canvas, graphics.guiWidth(), graphics.guiHeight(), mouseX, mouseY, chat);
+            ToolButtons.render(canvas, graphics.guiWidth(), graphics.guiHeight(), mouseX, mouseY);
             if (mc.screen instanceof ChatScreenAccess access) {
                 EmojiSuggest.render(canvas, access.wfchat$input(), graphics.guiHeight(), mouseX, mouseY,
                         graphics.guiHeight() - 28);

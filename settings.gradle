@@ -15,6 +15,14 @@ plugins {
 
 rootProject.name = 'wfchat'
 
+gradle.ext.assertMainMinecraftVersion = { String version ->
+    def parts = version =~ /^(\d+)\.(\d+)(?:\.\d+)*(?:[-+].*)?$/
+    if (!parts.matches() || parts.group(1).toInteger() > 26 ||
+            (parts.group(1).toInteger() == 26 && parts.group(2).toInteger() >= 2)) {
+        throw new GradleException("Minecraft ${version} belongs to the vulkan branch (26.2+), not main.")
+    }
+}
+
 stonecutter {
     kotlinController = false
     centralScript = 'build.gradle'

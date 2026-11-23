@@ -48,8 +48,8 @@ public final class Emojis {
 
     /** Immutable lookup tables, swapped whole when the dictionary finishes loading. */
     record Dictionary(Map<String, String> nameToUtf, Map<String, String> utfToName, Map<String, String> full,
-                      List<String> names, int maxCodepoints) {
-        static final Dictionary EMPTY = new Dictionary(Map.of(), Map.of(), Map.of(), List.of(), 1);
+                      List<String> names, Map<String, List<String>> categories, int maxCodepoints) {
+        static final Dictionary EMPTY = new Dictionary(Map.of(), Map.of(), Map.of(), List.of(), Map.of(), 1);
     }
 
     public synchronized void start() {
@@ -109,6 +109,7 @@ public final class Emojis {
         Map<String, String> utfToName = new HashMap<>();
         Map<String, String> full = new HashMap<>();
         List<String> names = new ArrayList<>();
+        Map<String, List<String>> categories = new java.util.LinkedHashMap<>();
         int max = 1;
         JsonArray all = JsonParser.parseString(json).getAsJsonArray();
         for (JsonElement e : all) {
@@ -125,12 +126,14 @@ public final class Emojis {
                 nameToUtf.put(name, utf);
                 names.add(name);
                 if (first) {
+                    categories.computeIfAbsent(o.has("category") ? o.get("category").getAsString() : "Other",
+                            k -> new ArrayList<>()).add(name);
                     utfToName.put(utf, name);
                     first = false;
                 }
             }
         }
-        dictionary = new Dictionary(nameToUtf, utfToName, full, names, max);
+        dictionary = new Dictionary(nameToUtf, utfToName, full, names, categories, max);
         WfChat.LOGGER.info("emoji dictionary: {} names", names.size());
     }
 
@@ -219,6 +222,40 @@ public final class Emojis {
         StringBuilder sb = new StringBuilder();
         utf.codePoints().forEach(cp -> sb.append(sb.length() == 0 ? "" : "-").append(Integer.toHexString(cp)));
         return sb.toString();
+    }
+
+    /** Server and configured emoji, the picker's "Custom" category. */
+    public List<String> customNames() {
+        List<String> out = new ArrayList<>(server.keySet().stream().sorted().toList());
+        config.custom.keySet().stream().sorted().filter(n -> !out.contains(n)).forEach(out::add);
+        return out;
+    }
+
+    /** Standard emoji names by gemoji category, in dictionary order. */
+    public Map<String, List<String>> categories() {
+        return dictionary.categories;
+    }
+
+    /** Every name containing {@code query} (aliases included); custom first, prefix matches before substring matches. */
+    public List<String> search(String query) {
+        String q = query.toLowerCase(Locale.ROOT);
+        List<String> out = new ArrayList<>();
+        for (String n : customNames()) {
+            if (n.contains(q)) {
+                out.add(n);
+            }
+        }
+        for (String n : dictionary.names) {
+            if (n.startsWith(q) && !out.contains(n)) {
+                out.add(n);
+            }
+        }
+        for (String n : dictionary.names) {
+            if (n.contains(q) && !out.contains(n)) {
+                out.add(n);
+            }
+        }
+        return out;
     }
 
     /** Names starting with, then containing, {@code query}; custom names first. */

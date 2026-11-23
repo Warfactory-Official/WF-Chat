@@ -4,6 +4,7 @@ import com.wf.wfchat.client.ChatHud;
 import com.wf.wfchat.client.ClientChat;
 import com.wf.wfchat.client.ChatScreenAccess;
 import com.wf.wfchat.client.EmojiSuggest;
+import com.wf.wfchat.client.ToolButtons;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.components.EditBox;
@@ -27,14 +28,14 @@ public abstract class ChatScreenMixin implements ChatScreenAccess {
     //? if <26.1 {
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void wfchat$click(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
-        if (EmojiSuggest.click(mouseX, mouseY, input) || ChatHud.clickSpoiler(mouseX, mouseY) || ChatHud.buttons().click(mouseX, mouseY, button, Screen.hasShiftDown())) {
+        if (ToolButtons.click(mouseX, mouseY, Screen.hasShiftDown(), input) || EmojiSuggest.click(mouseX, mouseY, input) || ChatHud.clickSpoiler(mouseX, mouseY) || ChatHud.buttons().click(mouseX, mouseY, button, Screen.hasShiftDown())) {
             cir.setReturnValue(true);
         }
     }
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     private void wfchat$key(int keyCode, int scanCode, int modifiers, CallbackInfoReturnable<Boolean> cir) {
-        if (EmojiSuggest.key(keyCode, input)) {
+        if (ToolButtons.key(keyCode, input) || EmojiSuggest.key(keyCode, input)) {
             cir.setReturnValue(true);
         }
     }
@@ -42,7 +43,7 @@ public abstract class ChatScreenMixin implements ChatScreenAccess {
     /*@Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void wfchat$click(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick,
                               CallbackInfoReturnable<Boolean> cir) {
-        if (EmojiSuggest.click(event.x(), event.y(), input) || ChatHud.clickSpoiler(event.x(), event.y())
+        if (ToolButtons.click(event.x(), event.y(), event.hasShiftDown(), input) || EmojiSuggest.click(event.x(), event.y(), input) || ChatHud.clickSpoiler(event.x(), event.y())
                 || ChatHud.buttons().click(event.x(), event.y(), event.button(), event.hasShiftDown())) {
             cir.setReturnValue(true);
         }
@@ -50,7 +51,7 @@ public abstract class ChatScreenMixin implements ChatScreenAccess {
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     private void wfchat$key(net.minecraft.client.input.KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
-        if (EmojiSuggest.key(event.key(), input)) {
+        if (ToolButtons.key(event.key(), input) || EmojiSuggest.key(event.key(), input)) {
             cir.setReturnValue(true);
         }
     }

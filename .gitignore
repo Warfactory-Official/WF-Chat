@@ -8,3 +8,4 @@ run-*/
 *.iml
 versions/*/build/
 versions/*/logs/
+dist/

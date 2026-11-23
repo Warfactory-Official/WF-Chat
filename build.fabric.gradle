@@ -132,4 +132,16 @@ publishing {
             version = "${project.version}-SNAPSHOT"
         }
     }
+    repositories {
+        maven {
+            name = 'WarfactorySnapshots'
+            url = 'https://repo.warfactory.co/snapshots'
+            credentials {
+                username = project.findProperty('warfactoryUser') ?: System.getenv('WARFACTORY_MAVEN_USER')
+                password = project.findProperty('warfactoryToken') ?: System.getenv('WARFACTORY_MAVEN_TOKEN')
+            }
+        }
+    }
 }
+
+apply from: "${rootProject.projectDir}/gradle/publish.gradle"

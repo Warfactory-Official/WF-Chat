@@ -1,6 +1,6 @@
 # WF Chat
 
-Chat replacement. Depends on GemRender. Client-only or client + server.
+Vanilla-Friendly chat replacement mod expanding with features such as Chat tabs, emojis and formatting.
 
 ## Nodes
 | node | loader |
@@ -45,20 +45,41 @@ Resource packs: `assets/<ns>/wfchat/glyphs.json` = `{"glyphs": {"crown": {"font"
 `config/wfchat-vanity.toml`: `[tags]` table, key = `"*"`, name or UUID, value = string list (`["[Admin]", ":crown:"]`). Providers from plugins stack on top.
 
 ## Emoji
+
+![Emoji picker](docs/media/emoji.gif)
 - Wire format matches Emojicord: `<:name:BASE64(id)>` (decimal ids also accepted), `:name:`, raw Unicode.
 - Names/aliases: GitHub gemoji list; images: Twemoji. Both fetched once, cached in `wfchat/emoji/`, URLs overridable.
 - `config/wfchat-emoji.toml` (written on first run): `enabled`, `animate`, `dictionary`, `images`, `[server_emoji]` limits, `[custom]` `pepe = "<discord id>"`, animated `dance = "a:<id>"`. Typed `:pepe:` is sent as `<:pepe:BASE64>` / `<a:dance:BASE64>`.
 - Rendering: one placeholder char of font `wfchat:emoji` (9 px advance, U+E000..U+E7FF) per emoji; images drawn by Canvas.
 - Typing `:ab` pops up suggestions: Tab/click completes, Up/Down move, Esc dismisses.
 - Animated: GIF (Discord `<a:..>`, custom `a:`, server emoji). Frames box-filtered to <=36 px, one stacked texture; `animate=false` => first frame.
-- Gap: no emoji picker grid; animated PNG/WebP unsupported.
+- Gap: animated PNG/WebP unsupported.
 
 ### Server emoji
 - Server: `config/wfchat/emoji/<name>.png|gif`, `config/wfchat-server.toml` `[emoji]` limits (defaults: 128 KiB, 8..128 px, square, 128 frames, 256 files). `/wfchat emoji list|reload` (reload = op 3).
 - Verified at load by `core/EmojiFile`: extension == magic bytes, name `[a-z0-9_]{2,32}`, size, px, square, PNG chunk CRCs + pixel stream length, GIF block structure + frame count; animated PNG, trailing data, unknown critical chunks => rejected (logged). PNG ancillary / GIF comment+app extensions stripped; canonical bytes hashed (SHA-256).
 - Transfer: no custom packets. Client sends `/wfchat emoji manifest|get`; replies are empty chat lines whose insertion carries `wfchat:em=...` (`core/EmojiWire`), consumed client-side, never shown. Cache `wfchat/emoji/server/<sha>.<ext>`.
 - Client re-verifies everything with its own `[server_emoji]` limits and requires SHA-256 == manifest. Typed `:name:` stays plain text; clients without the mod see the text.
-- Gap: server cache never pruned.
+- Cache pruned at startup to `cache_max_mb`, least recently used first.
+
+## Chat bridges (Discord)
+
+![Discord bridge channel](docs/media/bridge.gif)
+`config/wfchat-bridges.toml`, `[bridge.<id>]`: `title`, `color` (hex), `mode` (`pin` = also stays in Global, `own` = bridge channel only), `pattern` (Java regex on the line's plain text). Default `[bridge.discord]` matches `[Discord] ...` / `[Discord | Role] ...`.
+- Channel is dynamic: appears on the first matching line, closable. Typing into it sends normal chat (the bridge relays Global).
+- Only non-player lines match; player-signed chat cannot spoof a bridge.
+- Bridge mods format lines themselves; the default is a guess at the common "[Discord]" tag, not verified against DiscordSRV, Discord Integration (DI), Mc2Discord or MCDiscordChat. Set `pattern` to your server's format.
+
+## Tool buttons
+
+![Tool buttons](docs/media/tools.gif)
+Three squares at the right end of the channel bar.
+- Emoji picker: category tabs (Custom first when server/custom emoji exist, then the nine gemoji categories), paged grid, search field (type while open; Enter picks the first hit). Click inserts `:name: `, Shift keeps it open.
+- Colour picker: hue/saturation wheel + brightness slider (click the slider to set it); click the wheel inserts `&#RRGGBB`, hover previews the hex.
+- Coordinates: inserts `x y z`.
+- Esc or an outside click closes a panel.
 
 ## Styling
-`config/wfchat-chat.toml` `[style]` (`enabled`, `colors`, `formatting`, `spoilers`). Received player messages: `**bold**` `~~strike~~` `__underline__` `||spoiler||` (click to reveal) `&#RRGGBB`/`&#RGB` colour until `&r`. `\` escapes. Markers pair inside one text run. Strike/underline drawn by WF Chat (Canvas has none). Spoiler click not tied to `styleAt` => works on 26.1.
+
+![Styling](docs/media/style.gif)
+`config/wfchat-chat.toml` `[style]` (`enabled`, `colors`, `formatting`, `spoilers`). Received player messages: `**bold**` `~~strike~~` `__underline__` `||spoiler||` (click to reveal) `&#RRGGBB`/`&#RGB` colour until `&r`. `\` escapes. 
