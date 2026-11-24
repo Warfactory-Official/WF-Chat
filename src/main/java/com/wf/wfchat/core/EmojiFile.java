@@ -1,5 +1,7 @@
 package com.wf.wfchat.core;
 
+import com.wf.wfchat.core.webp.Invalid;
+import com.wf.wfchat.core.webp.WebP;
 import java.io.ByteArrayOutputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -14,7 +16,8 @@ import java.util.zip.Inflater;
  * Structural verifier/sanitiser for emoji files, shared by server (load) and client (receive); pure Java, no decoding
  * into pixels. Output is a canonical re-serialisation: PNG keeps IHDR/PLTE/tRNS/IDAT/IEND, GIF keeps frames, graphic
  * control and the loop extension; all other metadata is dropped and counted in {@link Verified#strippedBytes()}.
- * Anything malformed, oversized, animated-PNG, trailing-garbage or misnamed => {@link Rejected}.
+ * WebP is verified by a full decode (lossy, lossless, alpha, animated) and rewritten without ICC/EXIF/XMP/unknown chunks.
+ * Anything malformed, oversized, trailing-garbage or misnamed => {@link Rejected}.
  */
 public final class EmojiFile {
     private static final Pattern NAME = Pattern.compile("[a-z0-9_]{2,32}");
@@ -24,7 +27,7 @@ public final class EmojiFile {
     }
 
     public enum Kind {
-        PNG("png"), GIF("gif");
+        PNG("png"), GIF("gif"), WEBP("webp");
 
         public final String extension;
 
@@ -65,7 +68,8 @@ public final class EmojiFile {
         Kind claimed = switch (ext) {
             case "png" -> Kind.PNG;
             case "gif" -> Kind.GIF;
-            default -> throw new Rejected("extension ." + ext + " not allowed (png, gif)");
+            case "webp" -> Kind.WEBP;
+            default -> throw new Rejected("extension ." + ext + " not allowed (png, gif, webp)");
         };
         return verify(name, claimed, raw, limits);
     }
@@ -74,7 +78,7 @@ public final class EmojiFile {
     public static Verified verifyContent(String name, byte[] raw, Limits limits) throws Rejected {
         Kind kind = raw.length == 0 ? null : sniff(raw);
         if (kind == null) {
-            throw new Rejected(raw.length == 0 ? "empty file" : "content is neither PNG nor GIF");
+            throw new Rejected(raw.length == 0 ? "empty file" : "content is not PNG, GIF or WebP");
         }
         return verify(name, kind, raw, limits);
     }
@@ -88,12 +92,16 @@ public final class EmojiFile {
         }
         Kind actual = sniff(raw);
         if (actual == null) {
-            throw new Rejected("content is neither PNG nor GIF");
+            throw new Rejected("content is not PNG, GIF or WebP");
         }
         if (actual != claimed) {
             throw new Rejected("content is " + actual + " but file claims " + claimed);
         }
-        Parsed p = actual == Kind.PNG ? png(raw, limits) : gif(raw, limits);
+        Parsed p = switch (actual) {
+            case PNG -> png(raw, limits);
+            case GIF -> gif(raw, limits);
+            case WEBP -> webp(raw, limits);
+        };
         if (limits.square && p.width != p.height) {
             throw new Rejected("must be square, is " + p.width + "x" + p.height);
         }
@@ -123,6 +131,9 @@ public final class EmojiFile {
                 && (d[4] == '7' || d[4] == '9') && d[5] == 'a') {
             return Kind.GIF;
         }
+        if (WebP.sniff(d)) {
+            return Kind.WEBP;
+        }
         return null;
     }
 
@@ -132,6 +143,20 @@ public final class EmojiFile {
     private static void dims(int w, int h, Limits l) throws Rejected {
         if (w < l.minPx || h < l.minPx || w > l.maxPx || h > l.maxPx) {
             throw new Rejected(w + "x" + h + " px outside " + l.minPx + ".." + l.maxPx);
+        }
+    }
+
+    // ----------------------------------------------------------------- WebP
+
+    private static Parsed webp(byte[] d, Limits limits) throws Rejected {
+        try {
+            WebP.Result r = WebP.read(d, limits.maxPx, limits.maxFrames);
+            dims(r.width(), r.height(), limits);
+            ByteArrayOutputStream out = new ByteArrayOutputStream(r.canonical().length);
+            out.writeBytes(r.canonical());
+            return new Parsed(out, r.width(), r.height(), r.frames());
+        } catch (Invalid ex) {
+            throw new Rejected(ex.getMessage());
         }
     }
 
@@ -153,6 +178,14 @@ public final class EmojiFile {
         boolean sawIend = false;
         ByteArrayOutputStream idat = new ByteArrayOutputStream();
         int paletteEntries = 0;
+        boolean animated = false;
+        int numFrames = 0;
+        int fcCount = 0;
+        long seq = 0;
+        boolean fdatFrame = false;
+        int fw = 0;
+        int fh = 0;
+        ByteArrayOutputStream fdat = new ByteArrayOutputStream();
         while (pos < d.length) {
             if (sawIend) {
                 throw new Rejected("data after IEND");
@@ -239,7 +272,47 @@ public final class EmojiFile {
                     }
                     sawIend = true;
                 }
-                case "acTL", "fcTL", "fdAT" -> throw new Rejected("animated PNG not supported, use GIF");
+                case "acTL" -> {
+                    if (animated || sawIdat || n != 8) {
+                        throw new Rejected("bad acTL");
+                    }
+                    long frames = u32be(d, dataStart);
+                    if (frames < 1 || frames > limits.maxFrames) {
+                        throw new Rejected("animated PNG frame count " + frames + " outside 1.." + limits.maxFrames);
+                    }
+                    animated = true;
+                    numFrames = (int) frames;
+                }
+                case "fcTL" -> {
+                    if (!animated || n != 26 || u32be(d, dataStart) != seq++) {
+                        throw new Rejected("bad fcTL");
+                    }
+                    if (fdatFrame) {
+                        checkInflate(fdat.toByteArray(), rawSize(fw, fh, colorType, depth, interlace));
+                        fdat.reset();
+                    }
+                    long w = u32be(d, dataStart + 4);
+                    long h = u32be(d, dataStart + 8);
+                    long x = u32be(d, dataStart + 12);
+                    long y = u32be(d, dataStart + 16);
+                    if (++fcCount > numFrames || w < 1 || h < 1 || x + w > width || y + h > height
+                            || (d[dataStart + 24] & 0xFF) > 2 || (d[dataStart + 25] & 0xFF) > 1
+                            || !sawIdat && (fcCount > 1 || w != width || h != height || x != 0 || y != 0)) {
+                        throw new Rejected("bad frame " + (fcCount - 1) + " geometry");
+                    }
+                    fw = (int) w;
+                    fh = (int) h;
+                    fdatFrame = sawIdat;
+                }
+                case "fdAT" -> {
+                    if (!fdatFrame || n < 4 || u32be(d, dataStart) != seq++) {
+                        throw new Rejected("bad fdAT");
+                    }
+                    fdat.write(d, dataStart + 4, n - 4);
+                    if (fdat.size() > limits.maxBytes) {
+                        throw new Rejected("pixel data exceeds size limit");
+                    }
+                }
                 default -> {
                     if (Character.isUpperCase(type.charAt(0))) {
                         throw new Rejected("unknown critical chunk " + type);
@@ -260,7 +333,13 @@ public final class EmojiFile {
         }
         long expected = rawSize(width, height, colorType, depth, interlace);
         checkInflate(idat.toByteArray(), expected);
-        return new Parsed(out, width, height, 1);
+        if (fdatFrame) {
+            checkInflate(fdat.toByteArray(), rawSize(fw, fh, colorType, depth, interlace));
+        }
+        if (animated && fcCount != numFrames) {
+            throw new Rejected("acTL declares " + numFrames + " frames, found " + fcCount);
+        }
+        return new Parsed(out, width, height, animated ? numFrames : 1);
     }
 
     private static boolean validDepth(int colorType, int depth) {

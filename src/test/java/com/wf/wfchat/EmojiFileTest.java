@@ -98,7 +98,7 @@ class EmojiFileTest {
         assertThatThrownBy(() -> EmojiFile.verify("pepe.png", png(32, 16), L)).hasMessageContaining("square");
         assertThatThrownBy(() -> EmojiFile.verify("pepe.gif", png(32, 32), L)).hasMessageContaining("claims");
         assertThatThrownBy(() -> EmojiFile.verify("pepe.png", "not an image".getBytes(), L)).isInstanceOf(EmojiFile.Rejected.class);
-        assertThatThrownBy(() -> EmojiFile.verify("pepe.webp", png(32, 32), L)).hasMessageContaining("extension");
+        assertThatThrownBy(() -> EmojiFile.verify("pepe.bmp", png(32, 32), L)).hasMessageContaining("extension");
         assertThatThrownBy(() -> EmojiFile.verify("x.png", png(32, 32), L)).hasMessageContaining("name");
         assertThatThrownBy(() -> EmojiFile.verify("pepe.gif", gif(16, 16, 5), new EmojiFile.Limits(131072, 8, 128, 4, true)))
                 .hasMessageContaining("frames");
@@ -124,6 +124,6 @@ class EmojiFileTest {
     @Test
     void rejectsAnimatedPng() throws Exception {
         byte[] raw = withChunk(png(32, 32), "acTL", new byte[8]);
-        assertThatThrownBy(() -> EmojiFile.verify("pepe.png", raw, L)).hasMessageContaining("animated");
+        assertThatThrownBy(() -> EmojiFile.verify("pepe.png", raw, L)).hasMessageContaining("acTL");
     }
 }

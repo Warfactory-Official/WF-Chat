@@ -25,13 +25,13 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
- * Server-provided emoji: {@code config/wfchat/emoji/<name>.png|gif}, verified at load by {@link EmojiFile} with the
+ * Server-provided emoji: {@code config/wfchat/emoji/<name>.png|gif|webp}, verified at load by {@link EmojiFile} with the
  * limits of {@code config/wfchat-server.toml}; rejects are logged and listed by {@code /wfchat emoji reload}.
  */
 public final class ServerEmoji {
     private static final String TEMPLATE = """
             # WF Chat (server)
-            # Emoji files live in config/wfchat/emoji/<name>.png or .gif, name = [a-z0-9_]{2,32}.
+            # Emoji files live in config/wfchat/emoji/<name>.png, .gif or .webp, name = [a-z0-9_]{2,32}.
             # Files are verified (type, size, pixels, metadata); metadata is stripped; failures are skipped.
             [emoji]
             enabled = true

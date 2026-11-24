@@ -176,6 +176,7 @@ public final class ServerEmojiSync {
         EmojiFile.Kind kind = switch (f[7]) {
             case "png" -> EmojiFile.Kind.PNG;
             case "gif" -> EmojiFile.Kind.GIF;
+            case "webp" -> EmojiFile.Kind.WEBP;
             default -> throw new EmojiFile.Rejected("unknown kind " + f[7]);
         };
         if (!EmojiFile.validName(name) || !sha.matches("[0-9a-f]{64}") || len <= 0 || len > cfg.serverLimits.maxBytes()) {

@@ -2,7 +2,11 @@ package com.wf.wfchat.emoji;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import com.wf.wfchat.WfChat;
+import com.wf.wfchat.core.Anim;
+import com.wf.wfchat.core.Apng;
 import com.wf.wfchat.core.EmojiFile;
+import com.wf.wfchat.core.webp.Invalid;
+import com.wf.wfchat.core.webp.WebP;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -98,12 +102,32 @@ public final class EmojiImages {
                 Files.createDirectories(file.getParent());
                 Files.write(file, v.data());
             }
-            Frames frames = v.kind() == EmojiFile.Kind.GIF ? decodeGif(v) : decodePng(v);
+            Frames frames = switch (v.kind()) {
+                case GIF -> decodeGif(v);
+                case WEBP -> frames(WebP.decode(v.data(), Math.max(v.width(), v.height())));
+                case PNG -> v.frames() > 1 ? frames(Apng.decode(v.data())) : decodePng(v);
+            };
             ready.add(strip(ref, frames));
-        } catch (IOException | RuntimeException | InterruptedException | EmojiFile.Rejected ex) {
+        } catch (IOException | RuntimeException | InterruptedException | EmojiFile.Rejected | Invalid ex) {
             WfChat.LOGGER.debug("emoji {} failed: {}", ref.name, ex.toString());
             ref.state = EmojiRef.FAILED;
         }
+    }
+
+    private static Frames frames(Anim anim) {
+        List<int[]> abgr = new ArrayList<>(anim.argb().size());
+        int[] delays = new int[anim.argb().size()];
+        for (int i = 0; i < delays.length; i++) {
+            int[] argb = anim.argb().get(i);
+            int[] out = new int[argb.length];
+            for (int p = 0; p < argb.length; p++) {
+                int c = argb[p];
+                out[p] = c & 0xFF00FF00 | (c & 0xFF) << 16 | c >> 16 & 0xFF;
+            }
+            abgr.add(out);
+            delays[i] = Math.max(MIN_DELAY_MS, anim.delayMs()[i]);
+        }
+        return new Frames(anim.width(), anim.height(), abgr, delays);
     }
 
     private static Frames decodePng(EmojiFile.Verified v) throws IOException {

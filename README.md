@@ -52,12 +52,12 @@ Resource packs: `assets/<ns>/wfchat/glyphs.json` = `{"glyphs": {"crown": {"font"
 - `config/wfchat-emoji.toml` (written on first run): `enabled`, `animate`, `dictionary`, `images`, `[server_emoji]` limits, `[custom]` `pepe = "<discord id>"`, animated `dance = "a:<id>"`. Typed `:pepe:` is sent as `<:pepe:BASE64>` / `<a:dance:BASE64>`.
 - Rendering: one placeholder char of font `wfchat:emoji` (9 px advance, U+E000..U+E7FF) per emoji; images drawn by Canvas.
 - Typing `:ab` pops up suggestions: Tab/click completes, Up/Down move, Esc dismisses.
-- Animated: GIF (Discord `<a:..>`, custom `a:`, server emoji). Frames box-filtered to <=36 px, one stacked texture; `animate=false` => first frame.
-- Gap: animated PNG/WebP unsupported.
+- Animated: GIF, APNG, animated WebP (Discord `<a:..>` and custom `a:` are GIF; APNG/WebP via server emoji). Frames box-filtered to <=36 px, one stacked texture; `animate=false` => first frame.
+- No dependency: `core/webp` is an in-house VP8 + VP8L + ALPH + ANMF decoder (bit-exact vs libwebp on the test set), `core/Apng` an APNG compositor.
 
 ### Server emoji
-- Server: `config/wfchat/emoji/<name>.png|gif`, `config/wfchat-server.toml` `[emoji]` limits (defaults: 128 KiB, 8..128 px, square, 128 frames, 256 files). `/wfchat emoji list|reload` (reload = op 3).
-- Verified at load by `core/EmojiFile`: extension == magic bytes, name `[a-z0-9_]{2,32}`, size, px, square, PNG chunk CRCs + pixel stream length, GIF block structure + frame count; animated PNG, trailing data, unknown critical chunks => rejected (logged). PNG ancillary / GIF comment+app extensions stripped; canonical bytes hashed (SHA-256).
+- Server: `config/wfchat/emoji/<name>.png|gif|webp`, `config/wfchat-server.toml` `[emoji]` limits (defaults: 128 KiB, 8..128 px, square, 128 frames, 256 files). `/wfchat emoji list|reload` (reload = op 3).
+- Verified at load by `core/EmojiFile`: extension == magic bytes, name `[a-z0-9_]{2,32}`, size, px, square, PNG chunk CRCs + pixel stream length per frame (acTL/fcTL/fdAT sequence), GIF block structure + frame count, WebP RIFF structure + full decode; trailing data, unknown critical chunks => rejected (logged). PNG ancillary / GIF comment+app extensions / WebP ICC+EXIF+XMP+unknown chunks stripped; canonical bytes hashed (SHA-256).
 - Transfer: no custom packets. Client sends `/wfchat emoji manifest|get`; replies are empty chat lines whose insertion carries `wfchat:em=...` (`core/EmojiWire`), consumed client-side, never shown. Cache `wfchat/emoji/server/<sha>.<ext>`.
 - Client re-verifies everything with its own `[server_emoji]` limits and requires SHA-256 == manifest. Typed `:name:` stays plain text; clients without the mod see the text.
 - Cache pruned at startup to `cache_max_mb`, least recently used first.
